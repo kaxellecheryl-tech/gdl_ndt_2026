@@ -250,22 +250,23 @@ footer strong{color:var(--fg);font-family:var(--f-display);font-size:.95rem}
   <section class="blk" id="mission">
     <div class="wrap">
       <p class="kicker">Notre mission</p>
-      <h2>Un mouvement de service de la Pastorale des Adultes</h2>
-      <p class="intro">Être Lecteur, c'est prêter sa voix à la Parole pendant la messe. C'est aussi une famille qui prie, se forme et avance ensemble.</p>
+      <h2>Un service laïc au cœur de la liturgie</h2>
+      <p class="intro">Le groupe des Lecteurs rassemble des fidèles laïcs baptisés, exempts d’irrégularité vis-à-vis de la table sainte, appelés à proclamer la Parole de Dieu lors des célébrations, en particulier pendant la messe.</p>
       <div class="missions">
         <article class="mission">
           <span class="verb">Proclamer</span>
-          <p>Méditer et proclamer les textes liturgiques, pour que chaque fidèle reçoive la Parole avec clarté.</p>
+          <p>Servir l’assemblée en rendant vivante et intelligible la première lecture, le psaume, la deuxième lecture, la séquence et l’acclamation.</p>
         </article>
         <article class="mission">
-          <span class="verb">Rassembler</span>
-          <p>Resserrer les liens de fraternité, rechercher la solidarité, la cohésion et l'unité entre Lecteurs et avec tous les groupes et mouvements de la paroisse.</p>
+          <span class="verb">Se former</span>
+          <p>Travailler la lecture publique, comprendre les textes bibliques, et apprendre la posture ainsi que le silence liturgique.</p>
         </article>
         <article class="mission">
-          <span class="verb">Comprendre</span>
-          <p>Se connaître et échanger entre Lecteurs pour mieux comprendre les textes avant de les porter à l'assemblée.</p>
+          <span class="verb">Servir</span>
+          <p>Collaborer avec le prêtre et les autres ministres avec disponibilité, rigueur, foi et préparation, dans un esprit humble et fraternel.</p>
         </article>
       </div>
+      <p class="intro">Par ce service, les Lecteurs participent à l’annonce de la foi et à la beauté de la liturgie. Ils ne lisent pas simplement un texte : ils proclament la Parole vivante de Dieu. Le lectorat est aussi un lieu de croissance spirituelle et de service fraternel dans la communauté.</p>
     </div>
   </section>
 
@@ -295,7 +296,7 @@ footer strong{color:var(--fg);font-family:var(--f-display);font-size:.95rem}
       <div class="sections">
         <article class="sec adult">
           <span class="chip">Section adultes</span>
-          <div class="big">Mardi<small>chaque semaine, dès 19h</small></div>
+          <div class="big">Mardi<small>chaque semaine, de 18h30 à 20h30</small></div>
           <div class="slot"><span class="chip">Bâtiment JP2</span><span class="chip">Préparation des lectures</span></div>
           <p>Partage des textes du dimanche, exercices de lecture et temps fraternel.</p>
         </article>
@@ -329,7 +330,7 @@ footer strong{color:var(--fg);font-family:var(--f-display);font-size:.95rem}
             <p class="legend">Je m'inscris pour la section</p>
             <div class="seg" role="radiogroup">
               <input type="radio" name="section" id="sec-a" value="Adultes" checked>
-              <label for="sec-a">Adultes<small>Mardi 19h · JP2</small></label>
+              <label for="sec-a">Adultes<small>Mardi 18h30 · JP2</small></label>
               <input type="radio" name="section" id="sec-k" value="Enfants">
               <label for="sec-k">Enfants<small>Dimanche 9h</small></label>
             </div>
@@ -486,7 +487,7 @@ function showResult(d, saved){
     result.append(
       el("h3", {textContent:"Bienvenue, " + d.prenoms + " !"}),
       el("p", {textContent: "Ton inscription est enregistrée. Un responsable te contactera au " + d.tel + ". " +
-        (d.section === "Enfants" ? "Rendez-vous le dimanche à 9h." : "Rendez-vous mardi dès 19h au bâtiment JP2.")}),
+        (d.section === "Enfants" ? "Rendez-vous le dimanche à 9h." : "Rendez-vous mardi de 18h30 à 20h30 au bâtiment JP2.")}),
       el("div", {className:"actions"}, [again])
     );
   } else {
