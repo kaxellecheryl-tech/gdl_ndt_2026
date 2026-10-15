@@ -31,7 +31,7 @@ test("protège les routes responsables et crée une session avec les bons identi
     SESSION_SECRET: process.env.SESSION_SECRET,
   };
   process.env.ADMIN_PHONES = "0700000000";
-  process.env.ADMIN_CODE = "un-code-de-test";
+  process.env.ADMIN_CODE = "un-code-de-test-avec-une-longueur-suffisante";
   process.env.SESSION_SECRET = "secret-de-test-assez-long-pour-la-session";
   const origin = "https://lecteurs.example";
   try {
@@ -40,17 +40,98 @@ test("protège les routes responsables et crée une session avec les bons identi
 
     const deniedOrigin = await handler(new Request(`${origin}/api/login`, {
       method: "POST", headers: { "content-type": "application/json", origin: "https://attacker.example" },
-      body: JSON.stringify({ tel: "0700000000", code: "un-code-de-test" }),
+      body: JSON.stringify({ tel: "0700000000", code: process.env.ADMIN_CODE }),
     }));
     assert.equal(deniedOrigin.status, 403);
 
+    const deniedScheme = await handler(new Request(`${origin}/api/login`, {
+      method: "POST", headers: { "content-type": "application/json", origin: "http://lecteurs.example" },
+      body: JSON.stringify({ tel: "0700000000", code: process.env.ADMIN_CODE }),
+    }));
+    assert.equal(deniedScheme.status, 403);
+
+    const invalidContentType = await handler(new Request(`${origin}/api/login`, {
+      method: "POST", headers: { "content-type": "text/plain", origin },
+      body: JSON.stringify({ tel: "0700000000", code: "un-code-de-test" }),
+    }));
+    assert.equal(invalidContentType.status, 400);
+
+    const oversized = await handler(new Request(`${origin}/api/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin, "x-nf-client-connection-ip": "203.0.113.2" },
+      body: JSON.stringify({ tel: "0700000000", code: "x".repeat(10_000) }),
+    }));
+    assert.equal(oversized.status, 400);
+
     const login = await handler(new Request(`${origin}/api/login`, {
       method: "POST", headers: { "content-type": "application/json", origin },
-      body: JSON.stringify({ tel: "+225 07 00 00 00 00", code: "un-code-de-test" }),
+      body: JSON.stringify({ tel: "+225 07 00 00 00 00", code: process.env.ADMIN_CODE }),
     }));
     assert.equal(login.status, 200);
     assert.match(login.headers.get("set-cookie"), /HttpOnly/);
     assert.match(login.headers.get("set-cookie"), /SameSite=Strict/);
+    assert.equal(login.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(login.headers.get("strict-transport-security"), "max-age=31536000");
+
+    const rateLimitIp = "203.0.113.8";
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const denied = await handler(new Request(`${origin}/api/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin, "x-nf-client-connection-ip": rateLimitIp },
+        body: JSON.stringify({ tel: "0700000000", code: "mauvais-code" }),
+      }));
+      assert.equal(denied.status, 401);
+    }
+    const rateLimited = await handler(new Request(`${origin}/api/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin, "x-nf-client-connection-ip": rateLimitIp },
+      body: JSON.stringify({ tel: "0700000000", code: "mauvais-code" }),
+    }));
+    assert.equal(rateLimited.status, 429);
+    assert.ok(Number(rateLimited.headers.get("retry-after")) > 0);
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const denied = await handler(new Request(`${origin}/api/login`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin,
+          "x-forwarded-for": `198.51.100.${attempt + 1}`,
+        },
+        body: JSON.stringify({ tel: "0700000000", code: "mauvais-code" }),
+      }));
+      assert.equal(denied.status, 401);
+    }
+    const spoofedIpRateLimited = await handler(new Request(`${origin}/api/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin, "x-forwarded-for": "192.0.2.99" },
+      body: JSON.stringify({ tel: "0700000000", code: "mauvais-code" }),
+    }));
+    assert.equal(spoofedIpRateLimited.status, 429);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("refuse la configuration responsable avec un code trop court ou réutilisé comme secret de session", async () => {
+  const previous = {
+    ADMIN_PHONES: process.env.ADMIN_PHONES,
+    ADMIN_CODE: process.env.ADMIN_CODE,
+    SESSION_SECRET: process.env.SESSION_SECRET,
+  };
+  process.env.ADMIN_PHONES = "0700000000";
+  process.env.SESSION_SECRET = "un-secret-de-session-suffisamment-long-pour-les-tests";
+  try {
+    process.env.ADMIN_CODE = "trop-court";
+    const shortCodeResponse = await handler(new Request("https://lecteurs.example/api/me"));
+    assert.equal((await shortCodeResponse.json()).configured, false);
+
+    process.env.ADMIN_CODE = process.env.SESSION_SECRET;
+    const reusedSecretResponse = await handler(new Request("https://lecteurs.example/api/me"));
+    assert.equal((await reusedSecretResponse.json()).configured, false);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];

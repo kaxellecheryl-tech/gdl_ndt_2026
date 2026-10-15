@@ -8,12 +8,22 @@ const MAX_BODY_BYTES = 10_000;
 const MAX_RECORDS = 5_000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_LOGIN_ATTEMPTS = 8;
+const MAX_LOGIN_BUCKETS = 10_000;
 const loginAttempts = new Map();
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "cross-origin-resource-policy": "same-origin",
+      "referrer-policy": "no-referrer",
+      "strict-transport-security": "max-age=31536000",
+      ...headers,
+    },
   });
 }
 
@@ -27,7 +37,8 @@ function normalizePhone(value) {
 function configured(env = process.env) {
   return Boolean(
     env.ADMIN_PHONES?.trim() &&
-    env.ADMIN_CODE?.trim() &&
+    env.ADMIN_CODE?.trim().length >= 20 &&
+    env.ADMIN_CODE !== env.SESSION_SECRET &&
     env.SESSION_SECRET &&
     env.SESSION_SECRET.length >= 32,
   );
@@ -40,7 +51,7 @@ function allowedPhones(env = process.env) {
 function constantTimeEqual(left, right) {
   const a = createHmac("sha256", "ndt-compare").update(String(left)).digest();
   const b = createHmac("sha256", "ndt-compare").update(String(right)).digest();
-  return timingSafeEqual(a, b) && String(left) === String(right);
+  return timingSafeEqual(a, b);
 }
 
 function sign(payload, secret) {
@@ -77,7 +88,7 @@ function cookieHeader(token, maxAge) {
 function sameOrigin(request) {
   const origin = request.headers.get("origin");
   if (!origin) return false;
-  try { return new URL(origin).host === new URL(request.url).host; } catch { return false; }
+  try { return new URL(origin).origin === new URL(request.url).origin; } catch { return false; }
 }
 
 export function validateRegistration(input) {
@@ -114,13 +125,42 @@ export function registrationsCsv(entries) {
 }
 
 function loginAttemptKey(request) {
-  return request.headers.get("x-nf-client-connection-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  return request.headers.get("x-nf-client-connection-ip") ?? "unknown";
 }
 
 async function readJson(request) {
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) return null;
-  try { return JSON.parse(text); } catch { return null; }
+  const contentType = request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/json" || !request.body) return null;
+
+  const contentLength = request.headers.get("content-length");
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_BODY_BYTES) return null;
+
+  const reader = request.body.getReader();
+  const chunks = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > MAX_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)); }
+  catch { return null; }
 }
 
 function apiPath(request) {
@@ -152,10 +192,19 @@ export default async function handler(request) {
   if (path === "/login" && method === "POST") {
     const key = loginAttemptKey(request);
     const now = Date.now();
+    for (const [attemptKey, attempts] of loginAttempts) {
+      if (attempts.until <= now) loginAttempts.delete(attemptKey);
+    }
     const previous = loginAttempts.get(key);
     if (previous && previous.until > now && previous.count >= MAX_LOGIN_ATTEMPTS) {
       return json({ error: "Trop de tentatives. Réessaie dans quelques minutes." }, 429, {
         "retry-after": String(Math.ceil((previous.until - now) / 1000)),
+      });
+    }
+    if (!previous && loginAttempts.size >= MAX_LOGIN_BUCKETS) {
+      const nextAvailable = Math.min(...[...loginAttempts.values()].map(attempts => attempts.until));
+      return json({ error: "Trop de tentatives. Réessaie dans quelques minutes." }, 429, {
+        "retry-after": String(Math.max(1, Math.ceil((nextAvailable - now) / 1000))),
       });
     }
     const input = await readJson(request);
@@ -208,6 +257,11 @@ export default async function handler(request) {
           "content-type": "text/csv; charset=utf-8",
           "content-disposition": 'attachment; filename="inscriptions-lecteurs-ndt.csv"',
           "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "cross-origin-resource-policy": "same-origin",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=31536000",
         },
       });
     } catch { return json({ error: "Impossible de préparer l'export." }, 503); }
